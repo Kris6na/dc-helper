@@ -1,0 +1,37 @@
+name: Compare languages
+on: workflow_dispatch
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch both lists
+        shell: python
+        run: |
+          import json, urllib.request
+
+          def fetch(lang):
+              req = urllib.request.Request(
+                  "https://www-api.pandadagames.com/new/lists",
+                  data=json.dumps({"cate_id": 0, "page": 1, "rows": 10}).encode(),
+                  headers={
+                      "Content-Type": "application/json",
+                      "lang": lang,
+                      "Origin": "https://www.pandadagames.com",
+                      "Referer": "https://www.pandadagames.com/",
+                      "User-Agent": "Mozilla/5.0 (compatible; EachClanNewsBot/1.0)",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  d = json.load(r)
+              print(lang, "code:", d.get("code"), "pages:", d["data"]["page_count"])
+              return d["data"]["lists"]
+
+          for lang in ("t_chinese", "english"):
+              print("=== " + lang + " ===")
+              for a in fetch(lang):
+                  print(a["lid"], "|", a["display_time"], "| cate", a["cate_id"], "|", a["title"])
+              print()
