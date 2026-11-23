@@ -1,4 +1,5 @@
 import html
+import json
 import os
 import re
 import time
@@ -8,7 +9,8 @@ from html.parser import HTMLParser
 import requests
 
 TOKEN = os.environ.get("DISCORD_TOKEN", "")
-CHANNEL = os.environ.get("NEWS_CHANNEL_ID", "")
+NEWS_CHANNEL_ID = "1132006965002903613"
+PING_ROLE_ID = "1574391373984047104"
 
 API = "https://discord.com/api/v10"
 SITE = "https://www-api.pandadagames.com/new/"
@@ -16,12 +18,13 @@ ORIGIN = "https://www.pandadagames.com"
 ZH_LINK = ORIGIN + "/tc/news/"
 EN_LINK = ORIGIN + "/en/news/"  # assumed from the tc pattern
 
-CATEGORIES = {1: "新聞 Info", 2: "公告 Update", 3: "活動 Event"}
+CATEGORIES = {1: "Info | 新聞", 2: "Update | 公告", 3: "Event | 活動"}
 SKIP_WORDS = ["占位"]
 SKIP_CATEGORIES = set()  # use {2} to skip maintenance notices
 MAX_PER_RUN = 3
 MATCH_WINDOW = 3600  # seconds allowed between the zh and en versions
 CHUNK = 1900
+BANNER_FILE = "announcement.jpeg"
 
 hdr = {"Authorization": f"Bot {TOKEN}"}
 
@@ -89,13 +92,13 @@ def discord(method, path, **kw):
 
 
 def already_posted():
-    msgs = discord("GET", f"/channels/{CHANNEL}/messages", params={"limit": 100})
+    msgs = discord("GET", f"/channels/{NEWS_CHANNEL_ID}/messages", params={"limit": 100})
     seen = set()
     for m in msgs:
         for e in m.get("embeds", []):
-            x = re.search(r"/tc/news/([0-9a-f]+)", e.get("url") or "")
-            if x:
-                seen.add(x.group(1))
+            text = (e.get("url") or "") + "\n" + (e.get("description") or "")
+            for lid in re.findall(r"/tc/news/([0-9a-f]+)", text):
+                seen.add(lid)
     return seen
 
 
@@ -175,51 +178,4 @@ def chunks(text):
             cur = cur + "\n" + line if cur else line
     if cur.strip():
         out.append(cur)
-    return [c for c in out if c.strip()]
-
-
-def send_text(channel_id, text):
-    for c in chunks(text):
-        discord("POST", f"/channels/{channel_id}/messages",
-                json={"content": c, "allowed_mentions": {"parse": []}})
-        time.sleep(1)
-
-
-if __name__ == "__main__":
-    zh_list = fetch("t_chinese")
-    en_pool = fetch("english")
-    pairs = pair(zh_list, en_pool)
-
-    seen = already_posted()
-    new = [(z, e) for z, e in pairs if z["lid"] not in seen]
-    new = new[:1] if not seen else new[:MAX_PER_RUN]  # first run: newest only
-
-    for zh, en in reversed(new):  # oldest first
-        cat = CATEGORIES.get(zh["cate_id"], "")
-        lines = [f"📅 {zh['display_time']} | {cat}"]
-        if en:
-            lines.append(f"🇬🇧 [{en['title']}]({EN_LINK}{en['lid']})")
-        lines.append("👇 完整內容請見討論串 | Full text in the thread")
-        embed = {
-            "title": zh["title"][:256],
-            "url": ZH_LINK + zh["lid"],
-            "description": "\n".join(lines),
-            "color": 16716947,
-            "footer": {"text": "Source: pandadagames.com"},
-        }
-        msg = discord("POST", f"/channels/{CHANNEL}/messages",
-                      json={"embeds": [embed], "allowed_mentions": {"parse": []}})
-        print("Posted", zh["lid"], zh["title"], "| EN:", en["title"] if en else "none")
-        try:
-            thread = discord(
-                "POST", f"/channels/{CHANNEL}/messages/{msg['id']}/threads",
-                json={"name": zh["title"][:90], "auto_archive_duration": 1440})
-            zh_body = site("detail", "t_chinese", {"lid": zh["lid"]}).get("content")
-            send_text(thread["id"], "**繁體中文**\n\n" + to_text(zh_body))
-            if en:
-                en_body = site("detail", "english", {"lid": en["lid"]}).get("content")
-                send_text(thread["id"], "**English**\n\n" + to_text(en_body))
-        except Exception as e:
-            print("Thread step failed:", e)
-
-    print("Done. New articles:", len(new))
+    return [c for c in out
