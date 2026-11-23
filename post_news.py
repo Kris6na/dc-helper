@@ -179,4 +179,79 @@ def chunks(text):
             cur = cur + "\n" + line if cur else line
     if cur.strip():
         out.append(cur)
-    return [c for c in out
+   return [c for c in out if c.strip()]
+
+
+def send_text(channel_id, text):
+    for c in chunks(text):
+        discord("POST", f"/channels/{channel_id}/messages",
+                json={"content": c, "allowed_mentions": {"parse": []}})
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    zh_list = fetch("t_chinese")
+    en_pool = fetch("english")
+    pairs = pair(zh_list, en_pool)
+
+    seen = already_posted()
+    new = [(z, e) for z, e in pairs if z["lid"] not in seen]
+    new = new[:1] if not seen else new[:MAX_PER_RUN]  # first run: newest only
+
+    banner_bytes = None
+    if os.path.isfile(BANNER_FILE):
+        with open(BANNER_FILE, "rb") as f:
+            banner_bytes = f.read()
+
+    for zh, en in reversed(new):  # oldest first
+        cat = CATEGORIES.get(zh["cate_id"], "Announcement | 公告")
+        display_time = en["display_time"] if en else zh["display_time"]
+
+        link_lines = []
+        if en:
+            link_lines.append(f"🇬🇧 [{en['title']}]({EN_LINK}{en['lid']})")
+        link_lines.append(f"🇹🇼 [{zh['title']}]({ZH_LINK}{zh['lid']})")
+
+        sections = [
+            f"📅 {display_time}",
+            "\n".join(link_lines),
+            "👇 Full text in the thread | 完整內容請見討論串",
+        ]
+        embed = {
+            "title": f"📢 {cat}",
+            "description": "\n\n".join(sections),
+            "color": 16716947,
+            "footer": {"text": "Source: pandadagames.com"},
+        }
+
+        payload = {
+            "content": f"<@&{PING_ROLE_ID}>",
+            "embeds": [embed],
+            "allowed_mentions": {"parse": [], "roles": [PING_ROLE_ID]},
+        }
+        if banner_bytes:
+            embed["image"] = {"url": f"attachment://{BANNER_FILE}"}
+            msg = discord(
+                "POST",
+                f"/channels/{NEWS_CHANNEL_ID}/messages",
+                data={"payload_json": json.dumps(payload)},
+                files={"files[0]": (BANNER_FILE, banner_bytes, "image/jpeg")},
+            )
+        else:
+            msg = discord("POST", f"/channels/{NEWS_CHANNEL_ID}/messages", json=payload)
+
+        print("Posted", zh["lid"], "| EN:", en["title"] if en else "none", "| ZH:", zh["title"])
+        try:
+            thread_name = (en["title"] if en else zh["title"])[:90]
+            thread = discord(
+                "POST", f"/channels/{NEWS_CHANNEL_ID}/messages/{msg['id']}/threads",
+                json={"name": thread_name, "auto_archive_duration": 1440})
+            if en:
+                en_body = site("detail", "english", {"lid": en["lid"]}).get("content")
+                send_text(thread["id"], "**English**\n\n" + to_text(en_body))
+            zh_body = site("detail", "t_chinese", {"lid": zh["lid"]}).get("content")
+            send_text(thread["id"], "**繁體中文**\n\n" + to_text(zh_body))
+        except Exception as e:
+            print("Thread step failed:", e)
+
+    print("Done. New articles:", len(new))
