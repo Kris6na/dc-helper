@@ -1,0 +1,19 @@
+name: Post news
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python post_news.py
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}
