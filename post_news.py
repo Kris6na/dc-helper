@@ -9,8 +9,7 @@ from html.parser import HTMLParser
 import requests
 
 TOKEN = os.environ.get("DISCORD_TOKEN", "")
-# NEWS_CHANNEL_ID = "1132006965002903613"
-NEWS_CHANNEL_ID = "1131913170282356746"
+NEWS_CHANNEL_ID = "1132006965002903613"
 PING_ROLE_ID = "1574391373984047104"
 
 API = "https://discord.com/api/v10"
@@ -179,7 +178,7 @@ def chunks(text):
             cur = cur + "\n" + line if cur else line
     if cur.strip():
         out.append(cur)
-   return [c for c in out if c.strip()]
+    return [c for c in out if c.strip()]
 
 
 def send_text(channel_id, text):
