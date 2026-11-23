@@ -16,4 +16,4 @@ jobs:
       - run: python post_news.py
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          NEWS_CHANNEL_ID: ${{ secrets.NEWS_CHANNEL_ID }}
+    
