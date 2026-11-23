@@ -1,2 +1,2 @@
-# dc-member-access
-discord bot to check member access requests
+# dc-helper
+discord bot for news
