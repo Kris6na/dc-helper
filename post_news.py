@@ -241,7 +241,7 @@ if __name__ == "__main__":
         }
 
         payload = {
-            "content": f"<@&{PING_ROLE_ID}> 📢 **{cat}**",
+            "content": f"<@&{PING_ROLE_ID}> **{cat}**",
             "embeds": [embed],
             "allowed_mentions": {"parse": [], "roles": [PING_ROLE_ID]},
         }
