@@ -3,7 +3,7 @@
 name: Check member requests
 on:
   schedule:
-        - cron: "43 * * * *"
+    - cron: "41 */3 * * *"
   workflow_dispatch:
 
 jobs:
