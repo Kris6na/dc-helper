@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 import requests
@@ -18,13 +18,19 @@ ORIGIN = "https://www.pandadagames.com"
 ZH_LINK = ORIGIN + "/tc/news/"
 EN_LINK = ORIGIN + "/en/news/"  # assumed from the tc pattern
 
-CATEGORIES = {1: "Info | 新聞", 2: "Update | 公告", 3: "Event | 活動"}
+CATEGORIES = {
+    1: "New Info Announcement | 最新消息公告",
+    2: "New Update Announcement | 更新公告",
+    3: "New Event Announcement | 新活動公告",
+}
 SKIP_WORDS = ["占位"]
 SKIP_CATEGORIES = set()  # use {2} to skip maintenance notices
 MAX_PER_RUN = 3
 MATCH_WINDOW = 3600  # seconds allowed between the zh and en versions
 CHUNK = 1900
 BANNER_FILE = "announcement.jpeg"
+# The site shows times in UTC+8 (its notices quote UTC+8). Change if that turns out wrong.
+SITE_TZ = timezone(timedelta(hours=8))
 
 hdr = {"Authorization": f"Bot {TOKEN}"}
 
@@ -55,6 +61,13 @@ def fetch(lang):
         if not any(w in a["title"] for w in SKIP_WORDS)
         and a["cate_id"] not in SKIP_CATEGORIES
     ]
+
+
+def discord_time(display_time):
+    """Turn the site's '2026-11-23 14:51' into Discord timestamps that show in each viewer's own time zone."""
+    dt = datetime.strptime(display_time, "%Y-%m-%d %H:%M").replace(tzinfo=SITE_TZ)
+    unix = int(dt.timestamp())
+    return f"<t:{unix}:f> (<t:{unix}:R>)"
 
 
 def when(a):
@@ -193,9 +206,15 @@ if __name__ == "__main__":
     en_pool = fetch("english")
     pairs = pair(zh_list, en_pool)
 
+    pairs.sort(key=lambda p: when(p[0]), reverse=True)  # newest first
+
     seen = already_posted()
-    new = [(z, e) for z, e in pairs if z["lid"] not in seen]
-    new = new[:1] if not seen else new[:MAX_PER_RUN]  # first run: newest only
+    # Only post articles NEWER than the newest one already posted in the channel.
+    newest_posted = next((i for i, (z, _) in enumerate(pairs) if z["lid"] in seen), None)
+    if newest_posted is None:
+        new = pairs[:1]  # nothing posted yet: newest article only
+    else:
+        new = pairs[:newest_posted][-MAX_PER_RUN:]  # newer ones; if many, oldest first
 
     banner_bytes = None
     if os.path.isfile(BANNER_FILE):
@@ -203,7 +222,7 @@ if __name__ == "__main__":
             banner_bytes = f.read()
 
     for zh, en in reversed(new):  # oldest first
-        cat = CATEGORIES.get(zh["cate_id"], "Announcement | 公告")
+        cat = CATEGORIES.get(zh["cate_id"], "New Announcement | 最新公告")
         display_time = en["display_time"] if en else zh["display_time"]
 
         link_lines = []
@@ -212,19 +231,17 @@ if __name__ == "__main__":
         link_lines.append(f"🇹🇼 [{zh['title']}]({ZH_LINK}{zh['lid']})")
 
         sections = [
-            f"📅 {display_time}",
+            f"📅 {discord_time(display_time)}",
             "\n".join(link_lines),
             "👇 Full text in the thread | 完整內容請見討論串",
         ]
         embed = {
-            "title": f"📢 {cat}",
             "description": "\n\n".join(sections),
-            "color": 16716947,
             "footer": {"text": "Source: pandadagames.com"},
         }
 
         payload = {
-            "content": f"<@&{PING_ROLE_ID}>",
+            "content": f"<@&{PING_ROLE_ID}> 📢 **{cat}**",
             "embeds": [embed],
             "allowed_mentions": {"parse": [], "roles": [PING_ROLE_ID]},
         }
